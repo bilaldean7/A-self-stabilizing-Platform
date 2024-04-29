@@ -1,1 +1,1 @@
-# Radio-Controlled-Drone
+# A self stabilizing platform 
