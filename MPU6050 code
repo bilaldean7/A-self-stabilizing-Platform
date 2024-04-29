@@ -1,1 +1,82 @@
+#include <Wire.h>
+const int MPU = 0x68;  // MPU6050 I2C address
+float AccX, AccY, AccZ;
+float GyroX, GyroY, GyroZ;
+float accAngleX, accAngleY, gyroAngleX, gyroAngleY, gyroAngleZ;
+float roll, pitch, yaw;
+float AccErrorX, AccErrorY, GyroErrorX, GyroErrorY, GyroErrorZ;
+float elapsedTime, currentTime, previousTime;
+int c = 0;
+
+void setup() {
+    Serial.begin(19200);
+    Wire.begin();
+    Wire.beginTransmission(MPU);
+    Wire.write(0x6B);  // PWR_MGMT_1 register
+    Wire.write(0x00);  // set to zero (wakes up the MPU-6050)
+    Wire.endTransmission(true);
+    calculate_IMU_error();
+}
+
+void loop() {
+    Wire.beginTransmission(MPU);
+    Wire.write(0x3B);  // starting with register 0x3B (ACCEL_XOUT_H)
+    Wire.endTransmission(false);
+    Wire.requestFrom(MPU, 14, true); // request a total of 14 registers
+    
+    AccX = (Wire.read() << 8 | Wire.read()) / 16384.0; // 0x3B (ACCEL_XOUT_H) & 0x3C (ACCEL_XOUT_L)
+    AccY = (Wire.read() << 8 | Wire.read()) / 16384.0; // 0x3D (ACCEL_YOUT_H) & 0x3E (ACCEL_YOUT_L)
+    AccZ = (Wire.read() << 8 | Wire.read()) / 16384.0; // 0x3F (ACCEL_ZOUT_H) & 0x40 (ACCEL_ZOUT_L)
+    
+    GyroX = (Wire.read() << 8 | Wire.read()) / 131.0; // 0x43 (GYRO_XOUT_H) & 0x44 (GYRO_XOUT_L)
+    GyroY = (Wire.read() << 8 | Wire.read()) / 131.0; // 0x45 (GYRO_YOUT_H) & 0x46 (GYRO_YOUT_L)
+    GyroZ = (Wire.read() << 8 | Wire.read()) / 131.0; // 0x47 (GYRO_ZOUT_H) & 0x48 (GYRO_ZOUT_L)
+    
+    // Calculate the angles from the sensors
+    accAngleX = (atan(AccY / sqrt(pow(AccX, 2) + pow(AccZ, 2))) * 180 / PI);
+    accAngleY = (atan(-1 * AccX / sqrt(pow(AccY, 2) + pow(AccZ, 2))) * 180 / PI);
+    
+    // Correcting the drift of Gyroscope using the angles calculated from Accelerometer
+    gyroAngleX = gyroAngleX + GyroX * elapsedTime; // Calculate the angle based on Gyro data
+    gyroAngleY = gyroAngleY + GyroY * elapsedTime;
+    yaw = yaw + GyroZ * elapsedTime;
+    
+    // Complementary filter - combine accelerometer and gyro angle values
+    roll = 0.96 * gyroAngleX + 0.04 * accAngleX;
+    pitch = 0.96 * gyroAngleY + 0.04 * accAngleY;
+    
+    // Output data to Serial for debugging
+    Serial.print("Roll: ");
+    Serial.print(roll);
+    Serial.print(" Pitch: ");
+    Serial.print(pitch);
+    Serial.print(" Yaw: ");
+    Serial.println(yaw);
+    
+    // Calculate the elapsed time
+    previousTime = currentTime;
+    currentTime = millis();
+    elapsedTime = (currentTime - previousTime) / 1000;
+}
+
+void calculate_IMU_error() {
+    // Assuming yaw starts at 0
+    yaw = 0;
+    for(int i = 0; i < 200; i++) {
+        Wire.beginTransmission(MPU);
+        Wire.write(0x43);
+        Wire.endTransmission(false);
+        Wire.requestFrom(MPU, 6, true);
+        GyroX = (Wire.read() << 8 | Wire.read()) / 131.0;
+        GyroY = (Wire.read() << 8 | Wire.read()) / 131.0;
+        GyroZ = (Wire.read() << 8 | Wire.read()) / 131.0;
+        // Average the values
+        GyroErrorX = GyroErrorX + GyroX;
+        GyroErrorY = GyroErrorY + GyroY;
+        GyroErrorZ = GyroErrorZ + GyroZ;
+    }
+    GyroErrorX /= 200;
+    GyroErrorY /= 200;
+    GyroErrorZ /= 200;
+}
 
